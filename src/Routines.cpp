@@ -23,11 +23,11 @@ DWORD MainDlg::LoadConfig( const std::wstring& path /*= L""*/ )
             }
             else
             {
-                std::vector<DWORD> pidList;
-                blackbone::Process::EnumByName( cfg.procName, pidList );
-
+                std::vector<DWORD> pidList = blackbone::Process::EnumByName( cfg.procName );
                 if (!pidList.empty())
                 {
+                    cfg.pid = pidList.front();
+
                     auto idx = _procList.Add( cfg.procName + L" (" + std::to_wstring( pidList.front() ) + L")", pidList.front() );
                     _procList.selection( idx );
 
@@ -106,9 +106,7 @@ DWORD MainDlg::FillProcessList()
 {
     _procList.reset();
 
-    std::vector<blackbone::ProcessInfo> found;
-    blackbone::Process::EnumByNameOrPID( 0, L"", found );
-
+    auto found = blackbone::Process::EnumByNameOrPID( 0, L"" ).result( std::vector<blackbone::ProcessInfo>() );
     for (auto& proc : found)
     {
         wchar_t text[255] = { 0 };
@@ -145,9 +143,11 @@ DWORD MainDlg::SetActiveProcess( DWORD pid, const std::wstring& path )
 /// </summary>
 void MainDlg::Inject()
 {
+    _inject.disable();
+
     InjectContext context;
     auto& cfg = _profileMgr.config();
-    DWORD result = 0;
+    NTSTATUS status = STATUS_SUCCESS;
 
     // Fill in context
     context.cfg = cfg;
@@ -165,21 +165,22 @@ void MainDlg::Inject()
     {
         DlgWait dlgWait( _core, context );
         dlgWait.RunModal( _hwnd );
-        result = dlgWait.status();
+        status = dlgWait.status();
     }
     else
     {
-        result = _core.InjectMultiple( &context );
+        status = _core.InjectMultiple( &context );
     }
 
     // Close after successful injection
-    if (cfg.close && result == ERROR_SUCCESS)
+    if (cfg.close && NT_SUCCESS( status ))
     {
         SaveConfig();
         CloseDialog();
         return;
     }
 
+    _inject.enable();
     _status.SetText( 2, L"Idle" );
 }
 
